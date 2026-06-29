@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YouTube Pomodoro</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --panel: #111827;
+      --panel-2: #1f2937;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --border: #374151;
+      --accent: #60a5fa;
+      --danger: #f87171;
+      --ok: #34d399;
+      --warn: #fbbf24;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at top, #1e3a8a 0, var(--bg) 34rem);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      padding: max(18px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    }
+
+    main {
+      width: min(1040px, 100%);
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin: 0 0 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.6rem, 4vw, 2.6rem);
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      background: rgba(17, 24, 39, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 22px;
+      box-shadow: var(--shadow);
+      padding: 18px;
+      backdrop-filter: blur(12px);
+    }
+
+    .player-card {
+      display: grid;
+      grid-template-rows: auto auto 1fr;
+      gap: 16px;
+      min-height: 100%;
+    }
+
+    .mode-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: rgba(96, 165, 250, 0.13);
+      color: #bfdbfe;
+      font-weight: 700;
+      font-size: 0.92rem;
+      white-space: nowrap;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--accent);
+      box-shadow: 0 0 18px var(--accent);
+    }
+
+    .timer {
+      font-size: clamp(3.6rem, 13vw, 7.8rem);
+      line-height: 0.95;
+      font-variant-numeric: tabular-nums;
+      font-weight: 800;
+      letter-spacing: -0.08em;
+      text-align: center;
+      padding: 6px 0 4px;
+    }
+
+    .progress-wrap {
+      height: 12px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .progress {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), #93c5fd);
+      transition: width 0.18s linear;
+    }
+
+    .player-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      overflow: hidden;
+      border-radius: 16px;
+      background: #050816;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    #player {
+      width: 100%;
+      height: 100%;
+    }
+
+    .controls {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 14px;
+      padding: 14px 13px;
+      color: var(--text);
+      background: var(--panel-2);
+      font-weight: 700;
+      cursor: pointer;
+      touch-action: manipulation;
+      transition: transform 0.08s ease, filter 0.12s ease, background 0.12s ease;
+    }
+
+    button:active {
+      transform: translateY(1px) scale(0.99);
+    }
+
+    button.primary {
+      background: #2563eb;
+    }
+
+    button.danger {
+      background: rgba(248, 113, 113, 0.18);
+      color: #fecaca;
+    }
+
+    button.ghost {
+      background: rgba(255, 255, 255, 0.08);
+      color: #e5e7eb;
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .settings {
+      display: grid;
+      gap: 14px;
+    }
+
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+
+    label {
+      color: #d1d5db;
+      font-weight: 700;
+      font-size: 0.94rem;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 13px;
+      padding: 13px 12px;
+      color: var(--text);
+      background: rgba(3, 7, 18, 0.52);
+      outline: none;
+      min-height: 48px;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .hint {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.5;
+    }
+
+    .status {
+      min-height: 1.5em;
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    .status.error {
+      color: #fecaca;
+    }
+
+    .status.ok {
+      color: #bbf7d0;
+    }
+
+    .mini {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.88rem;
+    }
+
+    .mini div {
+      padding: 10px 12px;
+      border-radius: 13px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow-wrap: anywhere;
+    }
+
+    .small-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    footer {
+      margin: 14px 2px 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    @media (max-width: 780px) {
+      body {
+        padding-left: 12px;
+        padding-right: 12px;
+      }
+
+      header {
+        display: block;
+      }
+
+      .grid {
+        grid-template-columns: 1fr;
+      }
+
+      .card {
+        border-radius: 18px;
+        padding: 14px;
+      }
+
+      .controls {
+        grid-template-columns: 1fr;
+      }
+
+      .two-col,
+      .mini,
+      .small-actions {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>YouTube Pomodoro</h1>
+        <p class="subtitle">作業用動画と休憩用動画を切り替えながら、指定時間でループします。</p>
+      </div>
+      <span class="pill" id="apiStatus"><span class="dot"></span>準備中</span>
+    </header>
+
+    <section class="grid">
+      <section class="card player-card" aria-label="タイマーとプレイヤー">
+        <div class="mode-row">
+          <span class="pill" id="modePill"><span class="dot"></span>未開始</span>
+          <span class="status" id="statusText">設定を入力して Start を押してください。</span>
+        </div>
+
+        <div>
+          <div class="timer" id="timerText">25:00</div>
+          <div class="progress-wrap" aria-hidden="true">
+            <div class="progress" id="progressBar"></div>
+          </div>
+        </div>
+
+        <div class="player-wrap">
+          <div id="player"></div>
+        </div>
+
+        <div class="controls">
+          <button class="primary" id="startPauseButton" type="button" disabled>Start</button>
+          <button class="ghost" id="skipButton" type="button" disabled>Skip</button>
+          <button class="danger" id="resetButton" type="button">Reset</button>
+        </div>
+
+        <div class="mini">
+          <div>作業動画位置: <strong id="workPosText">0:00</strong></div>
+          <div>現在モード: <strong id="currentModeText">-</strong></div>
+        </div>
+      </section>
+
+      <section class="card settings" aria-label="設定">
+        <div class="field">
+          <label for="workUrl">作業用 YouTube URL</label>
+          <input id="workUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+          <p class="hint">作業動画は、作業時間が終わると再生位置を保存し、次の作業では保存位置から再開します。動画が短い場合は自動でループします。</p>
+        </div>
+
+        <div class="field">
+          <label for="breakUrl">休憩用 YouTube URL</label>
+          <input id="breakUrl" type="url" placeholder="https://youtu.be/..." autocomplete="off" />
+          <p class="hint">休憩動画は、休憩時間が終わっても再生位置を保存せず、次の休憩では先頭から再生します。動画が短い場合は自動でループします。</p>
+        </div>
+
+        <div class="two-col">
+          <div class="field">
+            <label for="workMinutes">作業時間（分）</label>
+            <input id="workMinutes" type="number" min="1" max="999" step="1" value="25" inputmode="numeric" />
+          </div>
+          <div class="field">
+            <label for="breakMinutes">休憩時間（分）</label>
+            <input id="breakMinutes" type="number" min="1" max="999" step="1" value="5" inputmode="numeric" />
+          </div>
+        </div>
+
+        <div class="small-actions">
+          <button id="saveButton" type="button" class="ghost">設定を保存</button>
+          <button id="clearButton" type="button" class="ghost">保存を削除</button>
+        </div>
+
+        <p class="hint">
+          iPadではSafariで開き、共有メニューから「ホーム画面に追加」するとアプリ風に使えます。
+          画面ロック中やバックグラウンドではブラウザ側の制限でタイマー・再生が止まることがあります。
+        </p>
+      </section>
+    </section>
+
+    <footer>
+      YouTubeの埋め込み再生を使います。埋め込み不可の動画、年齢制限付き動画、広告表示中などでは期待通りに動かない場合があります。
+    </footer>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "youtube-pomodoro-settings-v1";
+
+    const els = {
+      apiStatus: document.getElementById("apiStatus"),
+      modePill: document.getElementById("modePill"),
+      statusText: document.getElementById("statusText"),
+      timerText: document.getElementById("timerText"),
+      progressBar: document.getElementById("progressBar"),
+      startPauseButton: document.getElementById("startPauseButton"),
+      skipButton: document.getElementById("skipButton"),
+      resetButton: document.getElementById("resetButton"),
+      saveButton: document.getElementById("saveButton"),
+      clearButton: document.getElementById("clearButton"),
+      workUrl: document.getElementById("workUrl"),
+      breakUrl: document.getElementById("breakUrl"),
+      workMinutes: document.getElementById("workMinutes"),
+      breakMinutes: document.getElementById("breakMinutes"),
+      workPosText: document.getElementById("workPosText"),
+      currentModeText: document.getElementById("currentModeText"),
+    };
+
+    const state = {
+      player: null,
+      playerReady: false,
+      running: false,
+      mode: "idle", // idle | work | break
+      intervalId: null,
+      targetAt: 0,
+      durationMs: 25 * 60 * 1000,
+      remainingMs: 25 * 60 * 1000,
+      workVideoId: "",
+      breakVideoId: "",
+      workPositionSec: 0,
+      lastLoadedVideoId: "",
+    };
+
+    function pad2(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function formatSeconds(totalSeconds) {
+      const safe = Math.max(0, Math.floor(totalSeconds));
+      const hours = Math.floor(safe / 3600);
+      const minutes = Math.floor((safe % 3600) / 60);
+      const seconds = safe % 60;
+      if (hours > 0) return `${hours}:${pad2(minutes)}:${pad2(seconds)}`;
+      return `${minutes}:${pad2(seconds)}`;
+    }
+
+    function formatMs(ms) {
+      return formatSeconds(Math.ceil(ms / 1000));
+    }
+
+    function setStatus(message, kind = "") {
+      els.statusText.textContent = message;
+      els.statusText.className = `status ${kind}`.trim();
+    }
+
+    function setApiStatus(message) {
+      els.apiStatus.innerHTML = `<span class="dot"></span>${escapeHtml(message)}`;
+    }
+
+    function setModeLabel() {
+      const labels = {
+        idle: "未開始",
+        work: "作業中",
+        break: "休憩中",
+      };
+      els.modePill.innerHTML = `<span class="dot"></span>${labels[state.mode] ?? "未開始"}`;
+      els.currentModeText.textContent = labels[state.mode] ?? "-";
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+
+    function parsePositiveMinutes(input, fallback) {
+      const value = Number(input.value);
+      if (!Number.isFinite(value) || value <= 0) return fallback;
+      return Math.max(1, Math.floor(value));
+    }
+
+    function extractYouTubeId(raw) {
+      const value = raw.trim();
+      if (!value) return "";
+
+      // Plain video ID, e.g. dQw4w9WgXcQ
+      if (/^[a-zA-Z0-9_-]{11}$/.test(value)) return value;
+
+      try {
+        const url = new URL(value);
+        const host = url.hostname.replace(/^www\./, "").replace(/^m\./, "");
+        const pathParts = url.pathname.split("/").filter(Boolean);
+
+        if (host === "youtu.be") {
+          return sanitizeVideoId(pathParts[0] || "");
+        }
+
+        if (host.endsWith("youtube.com") || host.endsWith("youtube-nocookie.com")) {
+          const v = url.searchParams.get("v");
+          if (v) return sanitizeVideoId(v);
+
+          const knownPrefixes = new Set(["embed", "shorts", "live", "v"]);
+          if (pathParts.length >= 2 && knownPrefixes.has(pathParts[0])) {
+            return sanitizeVideoId(pathParts[1]);
+          }
+        }
+      } catch (_) {
+        // Fall through to regex fallback.
+      }
+
+      const match = value.match(/(?:v=|youtu\.be\/|embed\/|shorts\/|live\/)([a-zA-Z0-9_-]{11})/);
+      return match ? match[1] : "";
+    }
+
+    function sanitizeVideoId(value) {
+      const match = String(value).match(/[a-zA-Z0-9_-]{11}/);
+      return match ? match[0] : "";
+    }
+
+    function readSettingsFromForm() {
+      const workVideoId = extractYouTubeId(els.workUrl.value);
+      const breakVideoId = extractYouTubeId(els.breakUrl.value);
+      const workMinutes = parsePositiveMinutes(els.workMinutes, 25);
+      const breakMinutes = parsePositiveMinutes(els.breakMinutes, 5);
+
+      return {
+        workUrl: els.workUrl.value.trim(),
+        breakUrl: els.breakUrl.value.trim(),
+        workVideoId,
+        breakVideoId,
+        workMinutes,
+        breakMinutes,
+      };
+    }
+
+    function validateSettings(settings) {
+      if (!settings.workVideoId) return "作業用 YouTube URL を正しく入力してください。";
+      if (!settings.breakVideoId) return "休憩用 YouTube URL を正しく入力してください。";
+      if (settings.workMinutes <= 0) return "作業時間は1分以上にしてください。";
+      if (settings.breakMinutes <= 0) return "休憩時間は1分以上にしてください。";
+      return "";
+    }
+
+    function saveSettings() {
+      const settings = readSettingsFromForm();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        workUrl: settings.workUrl,
+        breakUrl: settings.breakUrl,
+        workMinutes: settings.workMinutes,
+        breakMinutes: settings.breakMinutes,
+      }));
+      setStatus("設定を保存しました。", "ok");
+    }
+
+    function loadSettings() {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+
+      try {
+        const settings = JSON.parse(raw);
+        if (typeof settings.workUrl === "string") els.workUrl.value = settings.workUrl;
+        if (typeof settings.breakUrl === "string") els.breakUrl.value = settings.breakUrl;
+        if (Number.isFinite(Number(settings.workMinutes))) els.workMinutes.value = settings.workMinutes;
+        if (Number.isFinite(Number(settings.breakMinutes))) els.breakMinutes.value = settings.breakMinutes;
+      } catch (_) {
+        localStorage.removeItem(STORAGE_KEY);
+      }
+    }
+
+    function clearSettings() {
+      localStorage.removeItem(STORAGE_KEY);
+      setStatus("保存済み設定を削除しました。", "ok");
+    }
+
+    function getDurationMsForMode(mode) {
+      const settings = readSettingsFromForm();
+      return (mode === "work" ? settings.workMinutes : settings.breakMinutes) * 60 * 1000;
+    }
+
+    function updateTimerDisplay() {
+      let remainingMs = state.running ? state.targetAt - Date.now() : state.remainingMs;
+      remainingMs = Math.max(0, remainingMs);
+
+      els.timerText.textContent = formatMs(remainingMs);
+      els.workPosText.textContent = formatSeconds(state.workPositionSec);
+
+      const elapsed = Math.max(0, state.durationMs - remainingMs);
+      const ratio = state.durationMs > 0 ? Math.min(1, elapsed / state.durationMs) : 0;
+      els.progressBar.style.width = `${ratio * 100}%`;
+    }
+
+    function startTicking() {
+      stopTicking();
+      state.intervalId = window.setInterval(() => {
+        updateTimerDisplay();
+        if (state.running && Date.now() >= state.targetAt) {
+          switchMode();
+        }
+      }, 250);
+    }
+
+    function stopTicking() {
+      if (state.intervalId !== null) {
+        clearInterval(state.intervalId);
+        state.intervalId = null;
+      }
+    }
+
+    function startOrPause() {
+      if (!state.playerReady) {
+        setStatus("YouTubeプレイヤーの準備がまだ完了していません。", "error");
+        return;
+      }
+
+      if (state.running) {
+        pauseSession();
+      } else {
+        startOrResumeSession();
+      }
+    }
+
+    function startOrResumeSession() {
+      const settings = readSettingsFromForm();
+      const error = validateSettings(settings);
+      if (error) {
+        setStatus(error, "error");
+        return;
+      }
+
+      saveSettings();
+      state.workVideoId = settings.workVideoId;
+      state.breakVideoId = settings.breakVideoId;
+
+      if (state.mode === "idle") {
+        state.mode = "work";
+        state.workPositionSec = 0;
+        state.durationMs = settings.workMinutes * 60 * 1000;
+        state.remainingMs = state.durationMs;
+        loadCurrentVideo(0);
+      } else {
+        state.player.playVideo();
+      }
+
+      state.targetAt = Date.now() + state.remainingMs;
+      state.running = true;
+      els.startPauseButton.textContent = "Pause";
+      els.skipButton.disabled = false;
+      setModeLabel();
+      setStatus(state.mode === "work" ? "作業タイマーを開始しました。" : "休憩タイマーを開始しました。", "ok");
+      startTicking();
+      updateTimerDisplay();
+    }
+
+    function pauseSession() {
+      if (state.mode === "work") {
+        rememberWorkPosition();
+      }
+      state.remainingMs = Math.max(0, state.targetAt - Date.now());
+      state.running = false;
+      state.player.pauseVideo();
+      els.startPauseButton.textContent = "Resume";
+      setStatus("一時停止中です。", "");
+      updateTimerDisplay();
+    }
+
+    function resetSession() {
+      stopTicking();
+      if (state.playerReady) {
+        try {
+          state.player.pauseVideo();
+        } catch (_) {}
+      }
+      state.running = false;
+      state.mode = "idle";
+      state.targetAt = 0;
+      state.durationMs = parsePositiveMinutes(els.workMinutes, 25) * 60 * 1000;
+      state.remainingMs = state.durationMs;
+      state.workPositionSec = 0;
+      state.lastLoadedVideoId = "";
+      els.startPauseButton.textContent = "Start";
+      els.skipButton.disabled = true;
+      setModeLabel();
+      setStatus("リセットしました。", "");
+      updateTimerDisplay();
+    }
+
+    function skipSession() {
+      if (state.mode === "idle") return;
+      switchMode();
+    }
+
+    function switchMode() {
+      if (!state.playerReady) return;
+
+      if (state.mode === "work") {
+        rememberWorkPosition();
+        state.mode = "break";
+        state.durationMs = getDurationMsForMode("break");
+        state.remainingMs = state.durationMs;
+        loadCurrentVideo(0);
+        setStatus("休憩に切り替えました。", "ok");
+      } else {
+        state.mode = "work";
+        state.durationMs = getDurationMsForMode("work");
+        state.remainingMs = state.durationMs;
+        loadCurrentVideo(state.workPositionSec);
+        setStatus("作業に戻りました。", "ok");
+      }
+
+      state.targetAt = Date.now() + state.remainingMs;
+      state.running = true;
+      els.startPauseButton.textContent = "Pause";
+      els.skipButton.disabled = false;
+      setModeLabel();
+      startTicking();
+      updateTimerDisplay();
+    }
+
+    function rememberWorkPosition() {
+      if (!state.playerReady || state.mode !== "work") return;
+      try {
+        const current = state.player.getCurrentTime();
+        if (Number.isFinite(current) && current >= 0) {
+          state.workPositionSec = current;
+        }
+      } catch (_) {}
+    }
+
+    function loadCurrentVideo(startSeconds) {
+      const videoId = state.mode === "work" ? state.workVideoId : state.breakVideoId;
+      state.lastLoadedVideoId = videoId;
+      state.player.loadVideoById({
+        videoId,
+        startSeconds: Math.max(0, Number(startSeconds) || 0),
+      });
+    }
+
+    function handleVideoEnded() {
+      if (!state.running || state.mode === "idle") return;
+
+      // The timer has priority. If the session already expired, switch modes instead of looping.
+      if (Date.now() >= state.targetAt) {
+        switchMode();
+        return;
+      }
+
+      if (state.mode === "work") {
+        state.workPositionSec = 0;
+        loadCurrentVideo(0);
+      } else {
+        loadCurrentVideo(0);
+      }
+    }
+
+    function updateInitialTimerFromInput() {
+      if (state.mode !== "idle" || state.running) return;
+      state.durationMs = parsePositiveMinutes(els.workMinutes, 25) * 60 * 1000;
+      state.remainingMs = state.durationMs;
+      updateTimerDisplay();
+    }
+
+    function bindEvents() {
+      els.startPauseButton.addEventListener("click", startOrPause);
+      els.skipButton.addEventListener("click", skipSession);
+      els.resetButton.addEventListener("click", resetSession);
+      els.saveButton.addEventListener("click", saveSettings);
+      els.clearButton.addEventListener("click", clearSettings);
+
+      [els.workUrl, els.breakUrl, els.workMinutes, els.breakMinutes].forEach((el) => {
+        el.addEventListener("change", () => {
+          updateInitialTimerFromInput();
+          saveSettings();
+        });
+      });
+
+      [els.workMinutes, els.breakMinutes].forEach((el) => {
+        el.addEventListener("input", updateInitialTimerFromInput);
+      });
+
+      document.addEventListener("visibilitychange", () => {
+        // Date.now-based timing corrects itself when the page becomes visible again.
+        updateTimerDisplay();
+      });
+    }
+
+    window.onYouTubeIframeAPIReady = function () {
+      state.player = new YT.Player("player", {
+        width: "100%",
+        height: "100%",
+        playerVars: {
+          playsinline: 1,
+          rel: 0,
+          modestbranding: 1,
+          controls: 1,
+          disablekb: 0,
+        },
+        events: {
+          onReady: () => {
+            state.playerReady = true;
+            els.startPauseButton.disabled = false;
+            setApiStatus("準備完了");
+            setStatus("設定を入力して Start を押してください。", "");
+          },
+          onStateChange: (event) => {
+            if (event.data === YT.PlayerState.ENDED) {
+              handleVideoEnded();
+            }
+          },
+          onError: () => {
+            setStatus("動画を再生できません。URL、埋め込み許可、年齢制限などを確認してください。", "error");
+          },
+        },
+      });
+    };
+
+    function loadYouTubeApi() {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+
+    loadSettings();
+    bindEvents();
+    setModeLabel();
+    updateInitialTimerFromInput();
+    loadYouTubeApi();
+  </script>
+</body>
+</html>
