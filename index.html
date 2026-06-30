@@ -155,7 +155,7 @@
 
     .controls {
       display: grid;
-      grid-template-columns: 1.6fr 1fr 1fr;
+      grid-template-columns: 1.5fr 1fr 1fr 1fr;
       gap: 10px;
     }
 
@@ -349,11 +349,13 @@
         <div class="controls">
           <button class="primary" id="startPauseButton" type="button" disabled>Start</button>
           <button class="ghost" id="skipButton" type="button" disabled>Skip</button>
+          <button class="ghost" id="timerResetButton" type="button">Timer Reset</button>
           <button class="danger" id="resetButton" type="button">Reset</button>
         </div>
 
         <div class="mini">
           <div>作業動画位置: <strong id="workPosText">0:00</strong></div>
+          <div>休憩動画位置: <strong id="breakPosText">0:00</strong></div>
           <div>現在モード: <strong id="currentModeText">-</strong></div>
         </div>
       </section>
@@ -362,13 +364,12 @@
         <div class="field">
           <label for="workUrl">作業用 YouTube URL</label>
           <input id="workUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
-          <p class="hint">作業動画は、作業時間が終わると再生位置を保存し、次の作業では保存位置から再開します。動画が短い場合は自動でループします。</p>
         </div>
 
         <div class="field">
           <label for="breakUrl">休憩用 YouTube URL</label>
           <input id="breakUrl" type="url" placeholder="https://youtu.be/..." autocomplete="off" />
-          <p class="hint">休憩動画は、休憩時間が終わっても再生位置を保存せず、次の休憩では先頭から再生します。動画が短い場合は自動でループします。</p>
+          <p class="hint">作業動画・休憩動画は、それぞれの時間が終わると再生位置を保存し、次回同じモードでは保存位置から再開します。動画が短い場合は自動でループします。</p>
         </div>
 
         <div class="two-col">
@@ -387,10 +388,6 @@
           <button id="clearButton" type="button" class="ghost">保存を削除</button>
         </div>
 
-        <p class="hint">
-          iPadではSafariで開き、共有メニューから「ホーム画面に追加」するとアプリ風に使えます。
-          画面ロック中やバックグラウンドではブラウザ側の制限でタイマー・再生が止まることがあります。
-        </p>
       </section>
     </section>
 
@@ -411,6 +408,7 @@
       startPauseButton: document.getElementById("startPauseButton"),
       skipButton: document.getElementById("skipButton"),
       resetButton: document.getElementById("resetButton"),
+      timerResetButton: document.getElementById("timerResetButton"),
       saveButton: document.getElementById("saveButton"),
       clearButton: document.getElementById("clearButton"),
       workUrl: document.getElementById("workUrl"),
@@ -418,6 +416,7 @@
       workMinutes: document.getElementById("workMinutes"),
       breakMinutes: document.getElementById("breakMinutes"),
       workPosText: document.getElementById("workPosText"),
+      breakPosText: document.getElementById("breakPosText"),
       currentModeText: document.getElementById("currentModeText"),
     };
 
@@ -433,6 +432,7 @@
       workVideoId: "",
       breakVideoId: "",
       workPositionSec: 0,
+      breakPositionSec: 0,
       lastLoadedVideoId: "",
     };
 
@@ -591,6 +591,7 @@
 
       els.timerText.textContent = formatMs(remainingMs);
       els.workPosText.textContent = formatSeconds(state.workPositionSec);
+      els.breakPosText.textContent = formatSeconds(state.breakPositionSec);
 
       const elapsed = Math.max(0, state.durationMs - remainingMs);
       const ratio = state.durationMs > 0 ? Math.min(1, elapsed / state.durationMs) : 0;
@@ -642,6 +643,7 @@
       if (state.mode === "idle") {
         state.mode = "work";
         state.workPositionSec = 0;
+        state.breakPositionSec = 0;
         state.durationMs = settings.workMinutes * 60 * 1000;
         state.remainingMs = state.durationMs;
         loadCurrentVideo(0);
@@ -660,9 +662,7 @@
     }
 
     function pauseSession() {
-      if (state.mode === "work") {
-        rememberWorkPosition();
-      }
+      rememberCurrentPosition();
       state.remainingMs = Math.max(0, state.targetAt - Date.now());
       state.running = false;
       state.player.pauseVideo();
@@ -684,11 +684,28 @@
       state.durationMs = parsePositiveMinutes(els.workMinutes, 25) * 60 * 1000;
       state.remainingMs = state.durationMs;
       state.workPositionSec = 0;
+      state.breakPositionSec = 0;
       state.lastLoadedVideoId = "";
       els.startPauseButton.textContent = "Start";
       els.skipButton.disabled = true;
       setModeLabel();
       setStatus("リセットしました。", "");
+      updateTimerDisplay();
+    }
+
+    function resetTimerOnly() {
+      if (state.mode === "idle") {
+        state.durationMs = parsePositiveMinutes(els.workMinutes, 25) * 60 * 1000;
+        state.remainingMs = state.durationMs;
+      } else {
+        state.durationMs = getDurationMsForMode(state.mode);
+        state.remainingMs = state.durationMs;
+        if (state.running) {
+          state.targetAt = Date.now() + state.remainingMs;
+        }
+      }
+
+      setStatus("タイマーだけをリセットしました。", "ok");
       updateTimerDisplay();
     }
 
@@ -701,13 +718,14 @@
       if (!state.playerReady) return;
 
       if (state.mode === "work") {
-        rememberWorkPosition();
+        rememberCurrentPosition();
         state.mode = "break";
         state.durationMs = getDurationMsForMode("break");
         state.remainingMs = state.durationMs;
-        loadCurrentVideo(0);
+        loadCurrentVideo(state.breakPositionSec);
         setStatus("休憩に切り替えました。", "ok");
       } else {
+        rememberCurrentPosition();
         state.mode = "work";
         state.durationMs = getDurationMsForMode("work");
         state.remainingMs = state.durationMs;
@@ -724,12 +742,16 @@
       updateTimerDisplay();
     }
 
-    function rememberWorkPosition() {
-      if (!state.playerReady || state.mode !== "work") return;
+    function rememberCurrentPosition() {
+      if (!state.playerReady || state.mode === "idle") return;
       try {
         const current = state.player.getCurrentTime();
         if (Number.isFinite(current) && current >= 0) {
-          state.workPositionSec = current;
+          if (state.mode === "work") {
+            state.workPositionSec = current;
+          } else if (state.mode === "break") {
+            state.breakPositionSec = current;
+          }
         }
       } catch (_) {}
     }
@@ -754,10 +776,10 @@
 
       if (state.mode === "work") {
         state.workPositionSec = 0;
-        loadCurrentVideo(0);
-      } else {
-        loadCurrentVideo(0);
+      } else if (state.mode === "break") {
+        state.breakPositionSec = 0;
       }
+      loadCurrentVideo(0);
     }
 
     function updateInitialTimerFromInput() {
@@ -770,6 +792,7 @@
     function bindEvents() {
       els.startPauseButton.addEventListener("click", startOrPause);
       els.skipButton.addEventListener("click", skipSession);
+      els.timerResetButton.addEventListener("click", resetTimerOnly);
       els.resetButton.addEventListener("click", resetSession);
       els.saveButton.addEventListener("click", saveSettings);
       els.clearButton.addEventListener("click", clearSettings);
